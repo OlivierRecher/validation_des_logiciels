@@ -1,0 +1,82 @@
+name: Java File Scanner
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+  workflow_dispatch: # Permet de lancer l'action manuellement si besoin
+
+jobs:
+  analyze-java:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Récupérer le code du repo
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2. Vérification de sécurité : Fichiers .class
+      - name: Check for committed .class files
+        run: |
+          # Recherche de fichiers .class
+          CLASS_FILES=$(find . -type f -name "*.class")
+          
+          if [ -n "$CLASS_FILES" ]; then
+            echo "::error::Found compiled .class files committed in the repo (Bad Practice):"
+            echo "$CLASS_FILES"
+            exit 1
+          else
+            echo "Success: No .class files found."
+          fi
+
+      # 3. Scan des fichiers .java et génération du rapport
+      - name: Scan Java files and Generate Report
+        id: scan
+        run: |
+          REPORT_FILE="java-file-report.txt"
+          
+          # Trouver tous les fichiers .java
+          # On utilise find pour lister les fichiers
+          JAVA_FILES=$(find . -type f -name "*.java")
+
+          # Condition d'échec : Aucun fichier Java
+          if [ -z "$JAVA_FILES" ]; then
+            echo "::error::No .java files found in this repository."
+            exit 1
+          fi
+
+          # Calculs statistiques
+          FILE_COUNT=$(echo "$JAVA_FILES" | wc -l)
+          
+          # Calcul du total de lignes (xargs cat concatène tout, wc -l compte les sauts de ligne)
+          TOTAL_LINES=$(echo "$JAVA_FILES" | xargs cat | wc -l)
+
+          # Création de l'en-tête du rapport
+          echo "Java Files Analysis Report" > $REPORT_FILE
+          echo "==========================" >> $REPORT_FILE
+          echo "Number of .java files: $FILE_COUNT" >> $REPORT_FILE
+          echo "Total lines of code: $TOTAL_LINES" >> $REPORT_FILE
+          echo "" >> $REPORT_FILE
+          echo "Per-file breakdown (path - line_count):" >> $REPORT_FILE
+          echo "---------------------------------------" >> $REPORT_FILE
+
+          # Boucle pour le détail par fichier
+          # On lit la liste des fichiers ligne par ligne
+          echo "$JAVA_FILES" | while read -r file; do
+            # wc -l < file permet d'avoir juste le nombre sans le nom du fichier répété
+            lines=$(wc -l < "$file")
+            echo "$file - $lines" >> $REPORT_FILE
+          done
+
+          echo "Report generated successfully."
+          # Affiche le contenu dans la console pour débug rapide
+          cat $REPORT_FILE
+
+      # 4. Upload du rapport comme artefact
+      - name: Upload Report Artifact
+        if: success() # Ne s'exécute que si les étapes précédentes ont réussi
+        uses: actions/upload-artifact@v4
+        with:
+          name: java-file-report
+          path: java-file-report.txt
